@@ -1,0 +1,50 @@
+resilience4j.circuitbreaker:
+  instances:
+    productMicroServiceCircuitBreaker:
+      registerHealthIndicator: true
+      slidingWindowSize: 10
+      permittedNumberOfCallsInHalfOpenState: 3
+      waitDurationInOpenState: 10000
+      failureRateThreshold: 50
+      eventConsumerBufferSize: 10
+
+spring:
+  data:
+    redis:
+      host: localhost
+      port: 6379
+  cloud:
+    gateway:
+      routes:
+        - id: security-service-jwt-cloud
+          uri: http://localhost:9095/
+          predicates:
+            - Path=/auth/**
+
+        - id: product-microservice
+          uri: http://localhost:9093/
+          predicates:
+            - Path=/products/**
+            - Method=GET,POST,PUT,DELETE
+          filters:
+            - AuthenticationFilter
+            - name: RequestRateLimiter
+              args:
+                # The rate at which request tokens are replenished
+                redis-rate-limiter.replenishRate: 1 # tokens per second
+                # Maximum burst capacity allowed beyond the replenish rate
+                redis-rate-limiter.burstCapacity: 1  # maximum tokens
+                # Number of tokens requested per API call
+                redis-rate-limiter.requestedTokens: 1 # token per request
+            - name: CircuitBreaker
+              args:
+                name: productMicroServiceCircuitBreaker
+                fallbackUri: forward:/fallback/productServiceFallback
+
+        - id: books-microservice
+          uri: http://localhost:9091/
+          predicates:
+            - Path=/books/**
+            - Method=GET,POST,PUT,DELETE
+          filters:
+            - AuthenticationFilter
